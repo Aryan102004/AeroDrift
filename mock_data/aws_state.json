@@ -1,0 +1,63 @@
+{
+  "vpcs": [
+    {
+      "vpc_id": "vpc-001",
+      "cidr_block": "10.0.0.0/16",
+      "name": "production-vpc"
+    }
+  ],
+  "subnets": [
+    {
+      "subnet_id": "subnet-public-001",
+      "vpc_id": "vpc-001",
+      "cidr_block": "10.0.1.0/24",
+      "type": "public"
+    },
+    {
+      "subnet_id": "subnet-private-001",
+      "vpc_id": "vpc-001",
+      "cidr_block": "10.0.2.0/24",
+      "type": "private"
+    }
+  ],
+  "ec2_instances": [
+    {
+      "instance_id": "i-web-001",
+      "subnet_id": "subnet-public-001",
+      "private_ip": "10.0.1.10",
+      "name": "web-server"
+    },
+    {
+      "instance_id": "i-app-001",
+      "subnet_id": "subnet-private-001",
+      "private_ip": "10.0.2.10",
+      "name": "app-server"
+    }
+  ],
+  "security_groups": [
+    {
+      "group_id": "sg-web-001",
+      "vpc_id": "vpc-001",
+      "name": "web-security-group",
+      "ingress": [
+        {
+          "protocol": "tcp",
+          "port": 80,
+          "source": "0.0.0.0/0"
+        }
+      ]
+    },
+    {
+      "group_id": "sg-app-001",
+      "vpc_id": "vpc-001",
+      "name": "app-security-group",
+      "ingress": [
+        {
+          "protocol": "tcp",
+          "port": 8080,
+          "source": "10.0.1.0/24"
+        }
+      ]
+    }
+  ]
+}
