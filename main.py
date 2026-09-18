@@ -48,8 +48,31 @@ async def main():
             f"[{attributes.get('relationship')}]"
         )
 
+    
+
+    print("\n[5] NETWORK PATH ANALYSIS")
+
+    if topology.has_path("internet", "i-web-001"):
+        path = topology.get_path(
+            "internet",
+            "i-web-001",
+        )
+
+        print("✓ Internet path detected:")
+        print("  " + " -> ".join(path))
+    else:
+        print("✗ No Internet path to web server.")
+
+    if topology.has_path("internet", "i-app-001"):
+        path = topology.get_path(
+            "internet",
+            "i-app-001",
+        )
+
+        print("⚠ Internet path detected to app server:")
+        print("  " + " -> ".join(path))
+    else:
+        print("✓ No Internet path to private app server.")    
     print("\nAeroDrift Week 1 pipeline completed successfully.")
-
-
 if __name__ == "__main__":
     asyncio.run(main())

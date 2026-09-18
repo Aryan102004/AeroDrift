@@ -25,13 +25,19 @@
       "instance_id": "i-web-001",
       "subnet_id": "subnet-public-001",
       "private_ip": "10.0.1.10",
-      "name": "web-server"
+      "name": "web-server",
+      "security_group_ids": [
+        "sg-web-001"
+      ]
     },
     {
       "instance_id": "i-app-001",
       "subnet_id": "subnet-private-001",
       "private_ip": "10.0.2.10",
-      "name": "app-server"
+      "name": "app-server",
+      "security_group_ids": [
+        "sg-app-001"
+      ]
     }
   ],
   "security_groups": [

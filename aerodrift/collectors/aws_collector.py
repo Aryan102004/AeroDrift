@@ -13,9 +13,9 @@ class AWSCollector:
     """
     Asynchronous AWS state collector.
 
-    The client can be either:
-    - a mock boto3-compatible client
-    - a real boto3 client
+    The collector accepts a boto3-compatible client.
+    Week 1 uses MockAWSClient so that the system can
+    operate without real AWS credentials.
     """
 
     def __init__(self, client):
@@ -86,18 +86,30 @@ class AWSCollector:
                     if tag["Key"] == "Name":
                         name = tag["Value"]
 
+                security_group_ids = [
+                    group["GroupId"]
+                    for group in instance.get(
+                        "SecurityGroups",
+                        [],
+                    )
+                ]
+
                 instances.append(
                     EC2Instance(
                         instance_id=instance["InstanceId"],
                         subnet_id=instance["SubnetId"],
                         private_ip=instance["PrivateIpAddress"],
                         name=name,
+                        security_group_ids=security_group_ids,
                     )
                 )
 
         return instances
 
-    async def collect_security_groups(self) -> list[SecurityGroup]:
+    async def collect_security_groups(
+        self,
+    ) -> list[SecurityGroup]:
+
         response = await asyncio.to_thread(
             self.client.describe_security_groups
         )
@@ -108,13 +120,22 @@ class AWSCollector:
 
             ingress_rules = []
 
-            for permission in group.get("IpPermissions", []):
+            for permission in group.get(
+                "IpPermissions",
+                [],
+            ):
 
                 protocol = permission["IpProtocol"]
 
-                port = permission.get("FromPort", 0)
+                port = permission.get(
+                    "FromPort",
+                    0,
+                )
 
-                for ip_range in permission.get("IpRanges", []):
+                for ip_range in permission.get(
+                    "IpRanges",
+                    [],
+                ):
                     ingress_rules.append(
                         IngressRule(
                             protocol=protocol,

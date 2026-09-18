@@ -23,6 +23,7 @@ class EC2Instance:
     subnet_id: str
     private_ip: str
     name: str
+    security_group_ids: List[str] = field(default_factory=list)
 
 
 @dataclass

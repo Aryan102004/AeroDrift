@@ -53,25 +53,34 @@ class MockAWSClient:
 
     def describe_instances(self) -> dict:
         return {
-            "Reservations": [
-                {
-                    "Instances": [
-                        {
-                            "InstanceId": instance["instance_id"],
-                            "SubnetId": instance["subnet_id"],
-                            "PrivateIpAddress": instance["private_ip"],
-                            "Tags": [
-                                {
-                                    "Key": "Name",
-                                    "Value": instance["name"],
-                                }
-                            ],
-                        }
-                        for instance in self.state["ec2_instances"]
-                    ]
-                }
-            ]
-        }
+        "Reservations": [
+            {
+                "Instances": [
+                    {
+                        "InstanceId": instance["instance_id"],
+                        "SubnetId": instance["subnet_id"],
+                        "PrivateIpAddress": instance["private_ip"],
+                        "SecurityGroups": [
+                            {
+                                "GroupId": group_id
+                            }
+                            for group_id in instance.get(
+                                "security_group_ids",
+                                []
+                            )
+                        ],
+                        "Tags": [
+                            {
+                                "Key": "Name",
+                                "Value": instance["name"],
+                            }
+                        ],
+                    }
+                    for instance in self.state["ec2_instances"]
+                ]
+            }
+        ]
+    }
 
     def describe_security_groups(self) -> dict:
         return {

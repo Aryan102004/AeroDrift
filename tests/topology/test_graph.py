@@ -19,7 +19,7 @@ async def test_graph_nodes(aws_state):
     topology = CloudTopology()
     graph = topology.build(aws_state)
 
-    assert graph.number_of_nodes() == 7
+    assert graph.number_of_nodes() == 8
 
 
 @pytest.mark.asyncio
@@ -27,7 +27,7 @@ async def test_graph_edges(aws_state):
     topology = CloudTopology()
     graph = topology.build(aws_state)
 
-    assert graph.number_of_edges() == 6
+    assert graph.number_of_edges() == 9
 
 
 @pytest.mark.asyncio
@@ -76,3 +76,69 @@ async def test_vpc_security_group_relationship(aws_state):
         "vpc-001",
         "sg-app-001",
     )
+
+
+@pytest.mark.asyncio
+async def test_internet_public_subnet_relationship(aws_state):
+    topology = CloudTopology()
+    graph = topology.build(aws_state)
+
+    assert graph.has_edge(
+        "internet",
+        "subnet-public-001",
+    )
+
+
+@pytest.mark.asyncio
+async def test_security_group_ec2_relationship(aws_state):
+    topology = CloudTopology()
+    graph = topology.build(aws_state)
+
+    assert graph.has_edge(
+        "sg-web-001",
+        "i-web-001",
+    )
+
+    assert graph.has_edge(
+        "sg-app-001",
+        "i-app-001",
+    )
+
+
+@pytest.mark.asyncio
+async def test_internet_to_web_path(aws_state):
+    topology = CloudTopology()
+    topology.build(aws_state)
+
+    assert topology.has_path(
+        "internet",
+        "i-web-001",
+    )
+
+
+@pytest.mark.asyncio
+async def test_internet_to_private_app_path(aws_state):
+    topology = CloudTopology()
+    topology.build(aws_state)
+
+    assert not topology.has_path(
+        "internet",
+        "i-app-001",
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_internet_to_web_path(aws_state):
+    topology = CloudTopology()
+    topology.build(aws_state)
+
+    path = topology.get_path(
+        "internet",
+        "i-web-001",
+    )
+
+    assert path == [
+        "internet",
+        "subnet-public-001",
+        "i-web-001",
+    ]
