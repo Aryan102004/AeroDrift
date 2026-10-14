@@ -1,78 +1,76 @@
+
 import asyncio
+import copy
+
+from rich.console import Console
 
 from aerodrift.collectors.aws_collector import AWSCollector
 from aerodrift.collectors.mock_aws_client import MockAWSClient
 from aerodrift.topology.graph import CloudTopology
+from aerodrift.drift.detector import detect_database_drift
+from aerodrift.dashboard.cli import run_dashboard
+
+
+console = Console()
 
 
 async def main():
-    print("=" * 50)
-    print("             AERODRIFT - WEEK 1")
-    print("=" * 50)
+    console.print("[bold cyan]AERODRIFT — WEEK 2[/bold cyan]")
+    console.print("Cloud Drift Detection and CLI Dashboard\n")
 
-    print("\n[1] AWS INGESTION")
-
+    # 1. Collect the existing Week 1 mock infrastructure.
     client = MockAWSClient()
-
     collector = AWSCollector(client)
-
     state = await collector.collect_all()
 
-    print(f"✓ VPCs collected: {len(state['vpcs'])}")
-    print(f"✓ Subnets collected: {len(state['subnets'])}")
-    print(f"✓ EC2 instances collected: {len(state['ec2_instances'])}")
-    print(f"✓ Security groups collected: {len(state['security_groups'])}")
+    console.print("[green]Cloud-state collection completed.[/green]")
 
-    print("\n[2] TOPOLOGY ENGINE")
+    # 2. Build the baseline topology.
+    baseline_topology = CloudTopology()
+    baseline_graph = baseline_topology.build(state)
 
-    topology = CloudTopology()
+    # 3. Simulate a private database for this Week 2 demonstration.
+    # This database is synthetic; it is not collected from AWS.
+    previous_graph = copy.deepcopy(baseline_graph)
+    current_graph = copy.deepcopy(baseline_graph)
 
-    graph = topology.build(state)
+    database_id = "db-prod-001"
+    private_subnet_id = "subnet-private-001"
 
-    print(f"✓ Graph nodes: {topology.node_count()}")
-    print(f"✓ Graph edges: {topology.edge_count()}")
-
-    print("\n[3] GRAPH NODES")
-
-    for node, attributes in graph.nodes(data=True):
-        print(
-            f"  {node} "
-            f"({attributes.get('resource_type')})"
+    for graph in (previous_graph, current_graph):
+        graph.add_node(
+            database_id,
+            resource_type="database",
+            name="production-database",
+            private_ip="10.0.2.20",
+        )
+        graph.add_edge(
+            private_subnet_id,
+            database_id,
+            relationship="network_path",
         )
 
-    print("\n[4] GRAPH EDGES")
+    # 4. Simulate a new Internet route to the private subnet.
+    # This represents a hypothetical topology drift event.
+    current_graph.add_edge(
+        "internet",
+        private_subnet_id,
+        relationship="simulated_drift",
+    )
 
-    for source, target, attributes in graph.edges(data=True):
-        print(
-            f"  {source} -> {target} "
-            f"[{attributes.get('relationship')}]"
-        )
+    # 5. Detect newly appearing Internet-to-database paths.
+    findings = detect_database_drift(
+        previous_graph,
+        current_graph,
+    )
 
-    
+    console.print(
+        f"[cyan]New exposure findings: {len(findings)}[/cyan]\n"
+    )
 
-    print("\n[5] NETWORK PATH ANALYSIS")
+    # 6. Launch the interactive Rich dashboard.
+    run_dashboard(current_graph, findings)
 
-    if topology.has_path("internet", "i-web-001"):
-        path = topology.get_path(
-            "internet",
-            "i-web-001",
-        )
 
-        print("✓ Internet path detected:")
-        print("  " + " -> ".join(path))
-    else:
-        print("✗ No Internet path to web server.")
-
-    if topology.has_path("internet", "i-app-001"):
-        path = topology.get_path(
-            "internet",
-            "i-app-001",
-        )
-
-        print("⚠ Internet path detected to app server:")
-        print("  " + " -> ".join(path))
-    else:
-        print("✓ No Internet path to private app server.")    
-    print("\nAeroDrift Week 1 pipeline completed successfully.")
 if __name__ == "__main__":
     asyncio.run(main())
