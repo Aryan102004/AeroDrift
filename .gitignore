@@ -27,3 +27,12 @@ htmlcov/
 # OS files
 .DS_Store
 Thumbs.db
+
+# AeroDrift generated data and reports
+data/
+reports/*.pdf
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/

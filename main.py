@@ -9,31 +9,33 @@ from aerodrift.collectors.mock_aws_client import MockAWSClient
 from aerodrift.topology.graph import CloudTopology
 from aerodrift.drift.detector import detect_database_drift
 from aerodrift.dashboard.cli import run_dashboard
+from aerodrift.storage.snapshot_store import save_snapshot
+from aerodrift.storage.comparator import compare_snapshots
 
 
 console = Console()
+DB_PATH = "data/aerodrift.db"
 
 
 async def main():
-    console.print("[bold cyan]AERODRIFT — WEEK 2[/bold cyan]")
-    console.print("Cloud Drift Detection and CLI Dashboard\n")
+    console.print("[bold cyan]AERODRIFT — WEEK 4[/bold cyan]")
+    console.print("Historical State Persistence and Incident Reporting\n")
 
     # 1. Collect the existing Week 1 mock infrastructure.
     client = MockAWSClient()
     collector = AWSCollector(client)
     state = await collector.collect_all()
 
-    console.print("[green]Cloud-state collection completed.[/green]")
+    console.print("[green]Mock cloud-state collection completed.[/green]")
 
     # 2. Build the baseline topology.
     baseline_topology = CloudTopology()
     baseline_graph = baseline_topology.build(state)
 
-    # 3. Simulate a private database for this Week 2 demonstration.
-    # This database is synthetic; it is not collected from AWS.
     previous_graph = copy.deepcopy(baseline_graph)
     current_graph = copy.deepcopy(baseline_graph)
 
+    # 3. Preserve the existing synthetic Week 2 database example.
     database_id = "db-prod-001"
     private_subnet_id = "subnet-private-001"
 
@@ -50,8 +52,7 @@ async def main():
             relationship="network_path",
         )
 
-    # 4. Simulate a new Internet route to the private subnet.
-    # This represents a hypothetical topology drift event.
+    # 4. Simulate a new Internet route in the current graph only.
     current_graph.add_edge(
         "internet",
         private_subnet_id,
@@ -59,17 +60,49 @@ async def main():
     )
 
     # 5. Detect newly appearing Internet-to-database paths.
-    findings = detect_database_drift(
+    findings = detect_database_drift(previous_graph, current_graph)
+
+    console.print(
+        f"[cyan]New exposure findings: {len(findings)}[/cyan]"
+    )
+
+    # 6. Persist both graphs as timestamped SQLite snapshots.
+    previous_id = save_snapshot(
         previous_graph,
+        "baseline",
+        DB_PATH,
+    )
+    current_id = save_snapshot(
         current_graph,
+        "current-simulated-state",
+        DB_PATH,
     )
 
     console.print(
-        f"[cyan]New exposure findings: {len(findings)}[/cyan]\n"
+        f"[green]Baseline snapshot saved: {previous_id}[/green]"
+    )
+    console.print(
+        f"[green]Current snapshot saved: {current_id}[/green]"
     )
 
-    # 6. Launch the interactive Rich dashboard.
-    run_dashboard(current_graph, findings)
+    # 7. Compare the newly saved snapshots.
+    comparison = compare_snapshots(
+        previous_id,
+        current_id,
+        DB_PATH,
+    )
+
+    console.print(
+        "[yellow]Synthetic drift comparison completed.[/yellow]"
+    )
+
+    # 8. Launch the interactive Week 4 dashboard.
+    run_dashboard(
+        current_graph,
+        findings,
+        db_path=DB_PATH,
+        comparison=comparison,
+    )
 
 
 if __name__ == "__main__":

@@ -12,6 +12,14 @@ from aerodrift.remediation.generator import (
     generate_rollback_code,
 )
 from aerodrift.remediation.executor import execute_rollback
+from pathlib import Path
+
+from aerodrift.storage.snapshot_store import (
+    list_snapshots,
+    save_snapshot,
+)
+from aerodrift.storage.comparator import compare_snapshots
+from aerodrift.reports.incident_report import generate_incident_report
 
 
 console = Console()
@@ -206,18 +214,199 @@ def run_mock_remediation() -> None:
     console.print(audit)
 
 
-def run_dashboard(graph, findings: list[DriftFinding]) -> None:
-    """Offer topology, findings, and mock remediation options."""
+def save_topology_snapshot(graph, db_path="data/aerodrift.db"):
+    """Save the current graph as a named historical snapshot."""
+    label = Prompt.ask("Snapshot label", default="manual-snapshot")
+
+    try:
+        snapshot_id = save_snapshot(graph, label, db_path)
+        console.print(
+            f"[bold green]Snapshot saved. ID: {snapshot_id}[/bold green]"
+        )
+    except (ValueError, OSError) as exc:
+        console.print(f"[bold red]Could not save snapshot:[/bold red] {exc}")
+
+
+def show_saved_snapshots(db_path="data/aerodrift.db"):
+    """Display all saved snapshot IDs and timestamps."""
+    snapshots = list_snapshots(db_path)
+
+    if not snapshots:
+        console.print("[yellow]No snapshots saved yet.[/yellow]")
+        return
+
+    table = Table(title="Historical Topology Snapshots")
+    table.add_column("ID", style="cyan")
+    table.add_column("Label")
+    table.add_column("Timestamp")
+
+    for snapshot in snapshots:
+        table.add_row(
+            str(snapshot["id"]),
+            snapshot["label"],
+            snapshot["timestamp"],
+        )
+
+    console.print(table)
+
+
+def choose_snapshot_id(snapshots, message):
+    """Prompt for a snapshot ID from the saved snapshots."""
+    valid_ids = [str(item["id"]) for item in snapshots]
+
+    selected = Prompt.ask(
+        message,
+        choices=valid_ids,
+    )
+    return int(selected)
+
+
+def compare_saved_snapshots(db_path="data/aerodrift.db"):
+    """Compare two selected historical snapshots."""
+    snapshots = list_snapshots(db_path)
+
+    if len(snapshots) < 2:
+        console.print(
+            "[yellow]Save at least two snapshots before comparing.[/yellow]"
+        )
+        return None
+
+    show_saved_snapshots(db_path)
+
+    previous_id = choose_snapshot_id(
+        snapshots, "Select previous snapshot ID"
+    )
+    current_id = choose_snapshot_id(
+        snapshots, "Select current snapshot ID"
+    )
+
+    if previous_id == current_id:
+        console.print(
+            "[yellow]Choose two different snapshot IDs.[/yellow]"
+        )
+        return None
+
+    try:
+        result = compare_snapshots(previous_id, current_id, db_path)
+    except (ValueError, OSError) as exc:
+        console.print(f"[bold red]Comparison failed:[/bold red] {exc}")
+        return None
+
+    table = Table(title="Historical Snapshot Comparison")
+    table.add_column("Change", style="cyan")
+    table.add_column("Count", justify="right")
+
+    for label, key in (
+        ("Added resources", "added_nodes"),
+        ("Removed resources", "removed_nodes"),
+        ("Added relationships", "added_edges"),
+        ("Removed relationships", "removed_edges"),
+        ("Changed resource attributes", "changed_nodes"),
+        ("Changed relationship attributes", "changed_edges"),
+    ):
+        table.add_row(label, str(len(result[key])))
+
+    console.print(table)
+
+    for label, key in (
+        ("Added resources", "added_nodes"),
+        ("Removed resources", "removed_nodes"),
+        ("Added relationships", "added_edges"),
+        ("Removed relationships", "removed_edges"),
+        ("Changed resource attributes", "changed_nodes"),
+        ("Changed relationship attributes", "changed_edges"),
+    ):
+        if result[key]:
+            console.print(f"\n[bold]{label}[/bold]")
+            for item in result[key]:
+                console.print(f"  • {item}")
+
+    if result["has_changes"]:
+        console.print("[bold yellow]Topology changes detected.[/bold yellow]")
+    else:
+        console.print("[bold green]No topology changes detected.[/bold green]")
+
+    return result
+
+
+def create_pdf_incident_report(
+    comparison,
+    findings,
+    db_path="data/aerodrift.db",
+):
+    """Generate a PDF report for a selected snapshot comparison."""
+    if comparison is None:
+        console.print(
+            "[yellow]Run a successful snapshot comparison first.[/yellow]"
+        )
+        return
+
+    output_path = (
+        Path("reports")
+        / (
+            "aerodrift_incident_"
+            f"{comparison['previous_snapshot_id']}_"
+            f"{comparison['current_snapshot_id']}.pdf"
+        )
+    )
+
+    finding_details = [
+        (
+            f"Severity: HIGH | Resource: {finding.resource_id} | "
+            f"{finding.message} | Path: "
+            f"{' -> '.join(finding.path or [])} | "
+            "Source: current synthetic drift demonstration"
+        )
+        for finding in findings
+    ]
+
+    try:
+        report_path = generate_incident_report(
+            comparison,
+            output_path=output_path,
+            findings=finding_details,
+            remediation_actions=[
+                "No remediation execution was performed by report generation.",
+                "Week 3 remediation remains mock-only and is separate from "
+                "the synthetic database exposure finding.",
+            ],
+            execution_mode="MOCK / SYNTHETIC DEMO",
+        )
+    except (ValueError, OSError) as exc:
+        console.print(f"[bold red]PDF generation failed:[/bold red] {exc}")
+        return
+
+    console.print(
+        Panel(
+            f"[bold green]Incident report generated[/bold green]\n{report_path}",
+            title="PDF Report",
+            border_style="green",
+        )
+    )
+
+
+
+def run_dashboard(
+    graph,
+    findings: list[DriftFinding],
+    db_path="data/aerodrift.db",
+    comparison=None,
+) -> None:
+    """Offer topology, remediation, persistence, and report options."""
     while True:
         console.print("\n[bold cyan]AeroDrift Dashboard Menu[/bold cyan]")
         console.print("1. View cloud topology and drift findings")
         console.print("2. View drift findings only")
         console.print("3. Preview and run mock remediation")
-        console.print("4. Exit")
+        console.print("4. Save current topology snapshot")
+        console.print("5. List historical snapshots")
+        console.print("6. Compare two saved snapshots")
+        console.print("7. Generate PDF incident report")
+        console.print("8. Exit")
 
         choice = Prompt.ask(
             "Select an option",
-            choices=["1", "2", "3", "4"],
+            choices=["1", "2", "3", "4", "5", "6", "7", "8"],
             default="1",
         )
 
@@ -239,6 +428,23 @@ def run_dashboard(graph, findings: list[DriftFinding]) -> None:
         elif choice == "3":
             run_mock_remediation()
 
+        elif choice == "4":
+            save_topology_snapshot(graph, db_path)
+
+        elif choice == "5":
+            show_saved_snapshots(db_path)
+
+        elif choice == "6":
+            comparison = compare_saved_snapshots(db_path)
+
+        elif choice == "7":
+            create_pdf_incident_report(
+                comparison,
+                findings,
+                db_path,
+            )
+
         else:
             console.print("[cyan]Exiting AeroDrift dashboard.[/cyan]")
             break
+
