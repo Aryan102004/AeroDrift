@@ -1,14 +1,31 @@
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.tree import Tree
-from rich.prompt import Prompt
 
 from aerodrift.drift.detector import DriftFinding
+from aerodrift.remediation.generator import (
+    IngressRuleFinding,
+    generate_rollback_code,
+)
+from aerodrift.remediation.executor import execute_rollback
 
 
 console = Console()
+
+
+class MockRollbackClient:
+    """Record remediation requests without modifying AWS."""
+
+    def __init__(self):
+        self.calls = []
+
+    def revoke_security_group_ingress(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"Return": True}
 
 
 def build_topology_tree(graph) -> Tree:
@@ -34,11 +51,13 @@ def build_topology_tree(graph) -> Tree:
 
     if "internet" in graph:
         visited.add("internet")
-        internet_branch = root.add("[bold yellow]Internet (internet)[/bold yellow]")
+        internet_branch = root.add(
+            "[bold yellow]Internet (internet)[/bold yellow]"
+        )
         add_children(internet_branch, "internet")
 
-    # Show resources not reachable from the Internet as well.
     remaining = sorted(set(graph.nodes) - visited)
+
     if remaining:
         isolated = root.add("[bold]Other cloud resources[/bold]")
         for node in remaining:
@@ -53,14 +72,14 @@ def build_topology_tree(graph) -> Tree:
 
 
 def render_dashboard(graph, findings: list[DriftFinding]) -> None:
-    """Render topology and drift findings in the terminal."""
+    """Render topology and database drift findings."""
     console.clear()
 
     console.print(
         Panel(
             "[bold cyan]AERODRIFT[/bold cyan]\n"
             "Agentic Cloud Topology & Remediation Graph",
-            subtitle="Week 2 | Cloud Security Audit",
+            subtitle="Week 3 | Cloud Security Audit",
             border_style="cyan",
         )
     )
@@ -75,8 +94,8 @@ def render_dashboard(graph, findings: list[DriftFinding]) -> None:
 
     console.print()
     console.print(build_topology_tree(graph))
-
     console.print()
+
     if findings:
         alerts = Table(
             title="New Internet-to-Database Exposure",
@@ -107,17 +126,98 @@ def render_dashboard(graph, findings: list[DriftFinding]) -> None:
         )
 
 
+def run_mock_remediation() -> None:
+    """
+    Demonstrate generated remediation against a mock client only.
+
+    This example rule is synthetic and is not derived from
+    the database graph finding or live AWS configuration.
+    """
+    finding = IngressRuleFinding(
+        group_id="sg-demo-001",
+        protocol="tcp",
+        from_port=8080,
+        to_port=8080,
+        source="0.0.0.0/0",
+    )
+
+    try:
+        code = generate_rollback_code(finding)
+    except ValueError as exc:
+        console.print(f"[bold red]Generation rejected:[/bold red] {exc}")
+        return
+
+    console.print(
+        Panel(
+            "[bold yellow]MOCK REMEDIATION PREVIEW[/bold yellow]\n"
+            "Synthetic example only. No live AWS rule is inspected "
+            "or modified.",
+            title="Remediation",
+            border_style="yellow",
+        )
+    )
+    console.print(
+        Syntax(code, "python", theme="monokai", line_numbers=True)
+    )
+
+    if not Confirm.ask(
+        "Execute this request against the mock client?",
+        default=False,
+    ):
+        console.print("[yellow]Execution cancelled.[/yellow]")
+        return
+
+    mock_client = MockRollbackClient()
+
+    try:
+        execute_rollback(code, mock_client)
+    except Exception as exc:
+        console.print(
+            f"[bold red]Mock execution failed:[/bold red] {exc}"
+        )
+        return
+
+    if len(mock_client.calls) != 1:
+        console.print(
+            "[bold red]Unexpected mock request count.[/bold red]"
+        )
+        return
+
+    console.print(
+        "[bold green]Mock execution completed. "
+        "Recorded requests: 1[/bold green]"
+    )
+    console.print(
+        "[dim]No real AWS security-group rule was revoked.[/dim]"
+    )
+
+    audit = Table(title="Mock Remediation Audit")
+    audit.add_column("Field", style="cyan")
+    audit.add_column("Value")
+    audit.add_row("Security group", finding.group_id)
+    audit.add_row("Protocol", finding.protocol.upper())
+    audit.add_row(
+        "Port range",
+        f"{finding.from_port}-{finding.to_port}",
+    )
+    audit.add_row("Source CIDR", finding.source)
+    audit.add_row("Execution mode", "Mock only")
+    audit.add_row("Recorded requests", str(len(mock_client.calls)))
+    console.print(audit)
+
+
 def run_dashboard(graph, findings: list[DriftFinding]) -> None:
-    """Offer a simple interactive terminal menu."""
+    """Offer topology, findings, and mock remediation options."""
     while True:
         console.print("\n[bold cyan]AeroDrift Dashboard Menu[/bold cyan]")
         console.print("1. View cloud topology and drift findings")
         console.print("2. View drift findings only")
-        console.print("3. Exit")
+        console.print("3. Preview and run mock remediation")
+        console.print("4. Exit")
 
         choice = Prompt.ask(
             "Select an option",
-            choices=["1", "2", "3"],
+            choices=["1", "2", "3", "4"],
             default="1",
         )
 
@@ -135,6 +235,9 @@ def run_dashboard(graph, findings: list[DriftFinding]) -> None:
                     )
                     if finding.path:
                         console.print(" -> ".join(finding.path))
+
+        elif choice == "3":
+            run_mock_remediation()
 
         else:
             console.print("[cyan]Exiting AeroDrift dashboard.[/cyan]")
